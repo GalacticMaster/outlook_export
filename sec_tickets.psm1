@@ -12,8 +12,10 @@ class SecTicket
     [string] $name
     [string] $filepath
     [string] $file
+    [string] $signature
+    [string] $hostname
 
- SecTicket ([String]$ticketnumber, [String]$pLevel, [string]$category, [string]$compromise, [string]$Activitydate, [string]$DDateTime, [string]$NDateTime, [string]$FireEmail, [string]$source, [string]$name, [string]$filepath, [string]$file)
+ SecTicket ([String]$ticketnumber, [String]$pLevel, [string]$category, [string]$compromise, [string]$Activitydate, [string]$DDateTime, [string]$NDateTime, [string]$FireEmail, [string]$source, [string]$name, [string]$filepath, [string]$file, [string]$signature, [string]$hostname)
     {
         $this.ticketnumber = $ticketnumber
         $this.pLevel = $pLevel
@@ -27,5 +29,7 @@ class SecTicket
         $this.name = $name
         $this.filepath = $filepath
         $this.file = $file
+        $this.signature = $signature
+        $this.hostname = $hostname
         }
 }
