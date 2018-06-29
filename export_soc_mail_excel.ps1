@@ -47,12 +47,10 @@ function pars-email($email)
     $finddDateTime = "\[DETECTION DATE & TIME]: (\d+\/\d+\/\d+ \d+\:\d+\:\d+)"
     $findNDateTime = "\[NOTIFICATION DATE & TIME]: (\d+\/\d+\/\d+ \d+\:\d+\:\d+)"
     $findusername = "(?smi)\[DETAILS]:(.*?)(File Details:|Files Details:|Further Details:)"
-    $findfilepath = "(?smi)\[DETAILS]:(.*?)Compromise Details:"
-    
-    
-    #$findSummary = "(?smi)\[SUMMARY](.*)\[DETAILS]\:"
-    #$findFireeywEmail = "Phish(.*)"
-    
+    $findfilepath = "(?smi)\[DETAILS]:(.*?)(Compromise Details:|Further Details:|Activity Details:|Infection Details:)"    
+    $findSummary = "(?smi)\[SUMMARY](.*)\[DETAILS]\:"
+    $findEAttch = "(?smi)\[DETAILS]:(.*?)Further Details:"
+        
 
     $secID = find-string-in-email $email $findsecID
     $pLevel = find-string-in-email $email $findPLevel
@@ -62,31 +60,97 @@ function pars-email($email)
     $NDateTime = find-string-in-email $email $findNDateTime
     $FireEmail = find-string-in-email $email $findFireeywEmail
     $filepath = find-string-in-email $email $findfilepath
+    $summary = find-string-in-email $email $findSummary
+    $EAttchment = find-string-in-email $email $findEAttch
     
 
     #find user name   
     $usernameblock = find-string-in-email $email $findusername
-    $name = [regex]::Matches($usernameblock,'(?<=\,|\().+?(?=\,|\[|\))')
+    #$name = [regex]::Matches($usernameblock,'(?<=\,|\()(\w+\.\w+)(?=\,|\[|\))')
+    $name = [regex]::Matches($usernameblock,'(?<=\,|\().+?(?=\,|\[|\))').Groups[1].value
 
     #find file path
     $file = [regex]::Matches($filepath,'(?smi)(File Path:|Path:).*?(\*)')
+
+    #find source of infection
+    if ($file)
+    
+        {
+            if ($file -cnotmatch "C:")
+        
+            {
+        
+                $source = "External Drive"
+            }
+            if ($file -match "Internet")
+            {
+                $source = "Web"
+            }
+        }
+    
+    #find if source is email or ATA
+    
+    if ($summary)
+        {
+            if ($summary -match "Phish.LIVE.DTI.URL")
+            {
+                $source = "Email"
+            }
+            if ($summary -match "Microsoft ATA")
+            {
+                $source = "Microsoft ATA"
+            }
+         }
+    #find Email Attachment
+
+    $Attchment = [regex]::Matches($filepath,'(?smi)(Attachment:).*?(\.)')
+
+    if ($Attchment)
+        {
+            if ($Attchment -match "w+")
+            {
+                $source = "Email Attachment"
+            }
+        }
+         
+    #find if installation of AUP as source
+    
+    if ($CateGory)
+        {
+            if ($CateGory -match "AUP")
+            {
+                $source = "AUP"
+            }
+            if ($CateGory -match "Security.Insider Threat")
+            {
+                $source = "Insider Threat"
+            }
+        }  
+
+    #find time to detection
+
+    #$timetodetection = $ActivityDate - $DDateTime
+    #Write-Host $timetodetection
+
+    #find Signature
+    $signature = [regex]::Match($filepath,'(?smi)(Signature: \w+\/\w+)') -replace "Signature:", ""
      
     #find activity date
-    $ActivityBlock = find-string-in-email $email $findActivity
-    
     $ActivityDate = ""
+
+    $ActivityBlock = find-string-in-email $email $findActivity
 
     $lines = $ActivityBlock.Split([Environment]::NewLine)
     foreach($line in $lines)
     {
         if ($line.StartsWith("*"))
         {
-            $ActivityDate = $line.Trim("* ")
+            $ActivityDate = $line.Trim("* ") -replace "BST", ""
         }
     }
 
       
-    return [SecTicket]::new($secID, $pLevel, $CateGory, $compromise, $ActivityDate, $DDateTime, $NDateTime, $FireEmail, $source, $name, $filepath, $file)
+    return [SecTicket]::new($secID, $pLevel, $CateGory, $compromise, $ActivityDate, $DDateTime, $NDateTime, $FireEmail, $source, $name, $filepath, $file, $signature, $hostname)
 
 
 }
@@ -98,10 +162,23 @@ $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $true
 
 $workbook = $excel.Workbooks.Add()
-
 $sheet = $workbook.ActiveSheet
 
-$counter = 0
+$sheet.cells.Item(1,1) = "Ticket number"
+$sheet.cells.Item(1,2) = "Priority Level"
+$sheet.cells.Item(1,3) = "Category"
+$sheet.cells.Item(1,4) = "Compromise"
+$sheet.cells.Item(1,5) = "Activity Date Time"
+$sheet.cells.Item(1,6) = "Detection Date Time"
+$sheet.cells.Item(1,7) = "Notification Date Time"
+$sheet.cells.Item(1,8) = "Signature"
+$sheet.cells.Item(1,9) = "Source"
+$sheet.cells.Item(1,10) = "File Path"
+$sheet.cells.Item(1,11) = "User Name"
+$sheet.cells.Item(1,12) = "Hostname"
+$sheet.cells.Item(1,13) = "Email Subject"
+
+$counter = 1
 
 
 $emails = Get-OutlookInBox
@@ -122,6 +199,11 @@ foreach ($email in $emails)
 
     #Loop through the Array and add data into the excel file created.
 
+    #find Host Name
+
+    $hostname = [regex]::Matches($email.Subject,'Host .*')
+      
+      
       $counter++
 
       $sheet.cells.Item($counter,1) = $secticket.ticketnumber  
@@ -138,9 +220,17 @@ foreach ($email in $emails)
 
       $sheet.cells.Item($counter,7) = $secticket.NDateTime
 
-      $sheet.cells.Item($counter,8) = $secticket.file
+      $sheet.cells.Item($counter,8) = $secticket.signature
 
-      $sheet.cells.Item($counter,9) = $secticket.name
+      $sheet.cells.Item($counter,9) = $secticket.source
+
+      $sheet.cells.Item($counter,10) = $secticket.file
+
+      $sheet.cells.Item($counter,11) = $secticket.name
+
+      $sheet.cells.Item($counter,12) = $secticket.hostname
+
+      $sheet.cells.Item($counter,13) = $email.Subject
 
 }
 
